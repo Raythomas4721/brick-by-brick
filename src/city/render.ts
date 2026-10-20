@@ -5,6 +5,7 @@ import { GROUND, SHEET_COLS, TILE, groundFor, scenery, spriteFor, type Sprite, t
 export const CELL = TILE * 2;
 /** Headroom so tall buildings on the first row aren't clipped. */
 export const TOP = TILE;
+const CONE = 680;
 
 export interface Citizen {
   x: number; // canvas px
@@ -77,10 +78,22 @@ export function drawCity(g: CanvasRenderingContext2D, img: HTMLImageElement, o: 
         row.forEach((tile, c) => drawTile(g, img, tile, x * CELL + c * TILE, TOP + y * CELL + r * TILE)),
       );
       if (cell.t === 'zone' && cell.level === 0) {
-        g.strokeStyle = cell.zone === 'R' ? 'rgba(46, 160, 67, 0.9)' : 'rgba(37, 99, 235, 0.9)';
+        const color = cell.zone === 'R' ? 'rgba(46, 160, 67, 0.95)' : 'rgba(37, 99, 235, 0.95)';
+        const px = x * CELL;
+        const py = TOP + y * CELL;
+        g.strokeStyle = color;
         g.setLineDash([3, 2]);
-        g.strokeRect(x * CELL + 2.5, TOP + y * CELL + 2.5, CELL - 5, CELL - 5);
+        g.strokeRect(px + 2.5, py + 2.5, CELL - 5, CELL - 5);
         g.setLineDash([]);
+        // "coming soon" signboard + traffic cone so an empty lot reads as a building site
+        g.fillStyle = '#6b4a2b';
+        g.fillRect(px + 9, py + 12, 1, 9);
+        g.fillStyle = color;
+        g.fillRect(px + 5, py + 7, 9, 6);
+        g.fillStyle = '#fff';
+        g.fillRect(px + 7, py + 9, 5, 1);
+        g.fillRect(px + 7, py + 11, 3, 1);
+        drawTile(g, img, CONE, px + TILE, py + TILE);
       }
     }
   }

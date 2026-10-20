@@ -24,6 +24,7 @@ export interface AppData {
 const KEY = 'habit-city:v2';
 const OLD_KEY = 'todo-monopoly:v1';
 export const START_COINS = 300;
+export const STARTER_TICKS = 3;
 
 export function randomTopic(): string {
   const chars = 'abcdefghijkmnpqrstuvwxyz23456789';
@@ -37,7 +38,8 @@ export function emptyData(): AppData {
   return {
     version: 2,
     tasks: [],
-    city: newCity('我的城市', (Math.random() * 2 ** 31) | 0),
+    // a few starter construction ticks so the first zones turn into buildings right away
+    city: { ...newCity('我的城市', (Math.random() * 2 ** 31) | 0), bank: STARTER_TICKS },
     coins: START_COINS,
     activity: {},
     notified: {},

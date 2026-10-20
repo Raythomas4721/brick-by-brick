@@ -135,6 +135,9 @@ export default function CityView({ app }: { app: AppApi }) {
   const selectedCell = selected ? cellAt(city, selected.x, selected.y) : null;
   const info = selected && selectedCell ? describe(selectedCell, app, selected.x, selected.y) : null;
   const unplaced = habits.filter((t) => !placedIds.has(t.id));
+  const emptyLots = city.cells.flatMap((c, i) => (c.t === 'zone' && c.level === 0 ? [i] : []));
+  const waiting = emptyLots.filter((i) => hasRoadAccess(city, i % city.size, Math.floor(i / city.size))).length;
+  const noRoad = emptyLots.length - waiting;
 
   return (
     <div className="city">
@@ -162,6 +165,10 @@ export default function CityView({ app }: { app: AppApi }) {
           </div>
         </div>
 
+        {!away && waiting > 0 && city.bank === 0 && (
+          <div className="banner">🏗️ 有 {waiting} 塊空地等著蓋：到記事本完成事項，每完成 1 件就能蓋 1 次（每天前 3 件可以蓋 2 次）。</div>
+        )}
+        {noRoad > 0 && <div className="banner muted">⚠️ 有 {noRoad} 塊空地沒接到道路，要緊鄰道路才會蓋房子。</div>}
         {away && <div className="banner night">🌙 城市睡著了……完成一件事，市長回來城市就會天亮，還有回歸獎勵。</div>}
 
         <div className="toolbar" role="toolbar">

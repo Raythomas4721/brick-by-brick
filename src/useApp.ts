@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  TOOLS, grow, landmarkLevel, place, placeError, retireLandmark, stats, type Context, type Stats, type Tool,
+  TOOLS, grow, hasRoadAccess, landmarkLevel, place, placeError, retireLandmark, stats, type Context, type Stats, type Tool,
 } from './city/engine';
 import { activeDays, isAway, rewardFor } from './economy/rewards';
 import { NTFY_MIN_DELAY_MS, NTFY_WINDOW_MS, cancelNtfy, scheduleNtfy } from './reminders/ntfy';
@@ -53,6 +53,7 @@ export function useApp() {
   }, []);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const inFlight = useRef(new Set<string>());
+  const lastZoneHint = useRef(0);
 
   useEffect(() => save(data), [data]);
 
@@ -209,6 +210,11 @@ export function useApp() {
       }
       update((cur) => ({ ...cur, city, coins: cur.coins - cost }));
       for (const e of events) toast(e, 'reward');
+      const placed = city.cells[y * city.size + x];
+      if ((tool === 'R' || tool === 'C') && placed.t === 'zone' && placed.level === 0 && Date.now() - lastZoneHint.current > 15_000) {
+        lastZoneHint.current = Date.now();
+        toast(hasRoadAccess(city, x, y) ? '🏗️ 空地劃好了！完成事項拿到建設點，這裡就會蓋起來' : '⚠️ 這塊空地沒接到道路，要緊鄰道路才會蓋房子');
+      }
       return true;
     },
     [toast, update],
