@@ -24,3 +24,8 @@ npm run build    # 產出 dist/，可直接放 GitHub Pages / Netlify
 ## 素材
 
 像素圖塊來自 [Kenney](https://kenney.nl) 的 Roguelike Modern City，CC0 授權（`public/assets/LICENSE-kenney.txt`）。
+
+## 部署
+
+推到 `main` 後，GitHub Actions（`.github/workflows/deploy.yml`）會自動測試、打包並發布到 GitHub Pages。
+repo 的 Settings → Pages → Source 要選「GitHub Actions」。
