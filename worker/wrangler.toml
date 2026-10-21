@@ -15,4 +15,4 @@ ALLOWED_ORIGINS = "https://raythomas4721.github.io,http://localhost:5173"
 [[d1_databases]]
 binding = "DB"
 database_name = "brick-by-brick-push"
-database_id = "REPLACE_WITH_ID_FROM_wrangler_d1_create"
+database_id = "297b16d2-9acb-47a4-9db5-40e665a62aef"
