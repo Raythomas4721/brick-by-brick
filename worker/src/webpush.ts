@@ -80,7 +80,7 @@ export async function encryptPayload(
 export async function vapidAuthorization(endpoint: string, vapid: Vapid, now = Date.now()): Promise<string> {
   const header = bytesToB64url(enc.encode(JSON.stringify({ typ: 'JWT', alg: 'ES256' })));
   const claims = bytesToB64url(
-    enc.encode(JSON.stringify({ aud: new URL(endpoint).origin, exp: Math.floor(now / 1000) + 12 * 3600, sub: vapid.subject })),
+    enc.encode(JSON.stringify({ aud: new URL(endpoint).origin, exp: Math.floor(now / 1000) + 3600, sub: vapid.subject })),
   );
   const unsigned = `${header}.${claims}`;
   const key = await crypto.subtle.importKey('jwk', vapid.privateJwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);

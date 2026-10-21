@@ -86,6 +86,7 @@ async function handle(req: Request, env: Env): Promise<Response> {
     const hash = await sha256Hex(body.secret);
     const existing = await env.DB.prepare('SELECT secret_hash FROM devices WHERE id = ?').bind(body.deviceId).first<{ secret_hash: string }>();
     if (existing && existing.secret_hash !== hash) return json({ error: 'forbidden' }, 403);
+    console.log(JSON.stringify({ event: 'subscribe', device: body.deviceId.slice(0, 6), service: new URL((body as any).subscription.endpoint).host }));
     await env.DB.prepare(
       `INSERT INTO devices (id, secret_hash, subscription, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?4)
        ON CONFLICT(id) DO UPDATE SET subscription = ?3, updated_at = ?4`,
@@ -104,12 +105,15 @@ async function handle(req: Request, env: Env): Promise<Response> {
       env.DB.prepare('DELETE FROM reminders WHERE device_id = ?').bind(device.id),
       ...list.filter((r: Reminder) => r.at > now).map((r: Reminder) => insert.bind(device.id, r.key, r.at, r.title, r.body)),
     ]);
+    console.log(JSON.stringify({ event: 'sync', device: device.id.slice(0, 6), count: list.length }));
     return json({ ok: true, count: list.length });
   }
 
   if (req.method === 'POST' && url.pathname === '/api/test') {
     const res = await sendPush(JSON.parse(device.subscription), { title: '積木城市', body: '測試成功！之後的提醒會從這裡跳出來 🏙️', tag: 'test' }, vapid(env));
-    return json({ ok: res.ok, status: res.status }, res.ok ? 200 : 502);
+    const reason = res.ok ? '' : (await res.text()).slice(0, 200);
+    console.log(JSON.stringify({ event: 'test', device: device.id.slice(0, 6), status: res.status, reason }));
+    return json({ ok: res.ok, status: res.status, reason }, res.ok ? 200 : 502);
   }
 
   if (req.method === 'DELETE' && url.pathname === '/api/device') {
@@ -138,6 +142,8 @@ export async function deliverDue(env: Env, now = Date.now()): Promise<number> {
     if (now - r.at <= STALE_MS) {
       const res = await sendPush(JSON.parse(r.subscription), { title: r.title, body: r.body, tag: r.key }, vapid(env)).catch(() => null);
       if (res?.ok) sent++;
+      const reason = res && !res.ok ? (await res.text().catch(() => '')).slice(0, 200) : '';
+      console.log(JSON.stringify({ event: 'push', device: r.device_id.slice(0, 6), key: r.key, status: res?.status ?? 'network-error', reason }));
       // the subscription no longer exists (app removed / permission revoked)
       if (res && (res.status === 404 || res.status === 410)) gone.add(r.device_id);
     }

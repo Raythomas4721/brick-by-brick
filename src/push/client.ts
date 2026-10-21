@@ -47,7 +47,10 @@ async function call(method: string, path: string, body: unknown): Promise<void> 
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`push ${res.status}`);
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(`push ${res.status}${detail.status ? ` / Apple ${detail.status}` : ''}${detail.reason ? ` ${detail.reason}` : ''}`);
+  }
 }
 
 /** Ask permission, subscribe this device and register it with the backend. Must run from a tap. */

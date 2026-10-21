@@ -2,6 +2,10 @@ name = "brick-by-brick-push"
 main = "src/index.ts"
 compatibility_date = "2026-09-01"
 
+# keep request logs so delivery problems can be diagnosed (wrangler tail / dashboard)
+[observability]
+enabled = true
+
 # deliver due reminders every minute
 [triggers]
 crons = ["* * * * *"]

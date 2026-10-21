@@ -261,8 +261,8 @@ export function useApp() {
     try {
       await sendTestPush({ deviceId: s.pushDeviceId, secret: s.pushSecret });
       toast('已送出測試通知，幾秒內會跳出來');
-    } catch {
-      toast('測試失敗，可以先關閉再重新開啟推播');
+    } catch (e) {
+      toast(`測試失敗（${e instanceof Error ? e.message : '未知錯誤'}），可以先關閉再重新開啟推播`, 'alert');
     }
   }, [toast]);
 

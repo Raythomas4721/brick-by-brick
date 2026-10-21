@@ -36,7 +36,7 @@ describe('web push', () => {
     expect(k).toBe(publicKey);
     const [h, c, s] = jwt.split('.');
     const claims = JSON.parse(new TextDecoder().decode(b64urlToBytes(c)));
-    expect(claims).toEqual({ aud: 'https://web.push.apple.com', exp: 1000 + 12 * 3600, sub: 'https://example.com/' });
+    expect(claims).toEqual({ aud: 'https://web.push.apple.com', exp: 1000 + 3600, sub: 'https://example.com/' });
     const ok = await crypto.subtle.verify(
       { name: 'ECDSA', hash: 'SHA-256' },
       pair.publicKey,
