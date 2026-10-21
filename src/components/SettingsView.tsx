@@ -1,24 +1,13 @@
-import { useRef, useState } from 'react';
-import { sendTestNtfy } from '../reminders/ntfy';
-import { emptyData, exportJson, importJson, randomTopic } from '../storage';
+import { useRef } from 'react';
+import { isIOS, pushSupport } from '../push/client';
+import { defaultSettings, emptyData, exportJson, importJson } from '../storage';
 import type { AppApi } from '../useApp';
 import { localDate } from '../util';
 
 export default function SettingsView({ app }: { app: AppApi }) {
   const { settings } = app.data;
-  const [topic, setTopic] = useState(settings.ntfyTopic);
-  const [server, setServer] = useState(settings.ntfyServer);
   const fileRef = useRef<HTMLInputElement>(null);
-  const dirty = topic !== settings.ntfyTopic || server !== settings.ntfyServer;
-
-  async function test() {
-    try {
-      await sendTestNtfy(settings);
-      app.toast('已送出測試推播，看看 ntfy App 有沒有收到');
-    } catch {
-      app.toast('送出失敗，請確認伺服器網址與網路');
-    }
-  }
+  const support = pushSupport();
 
   function download() {
     const blob = new Blob([exportJson(app.data)], { type: 'application/json' });
@@ -33,9 +22,8 @@ export default function SettingsView({ app }: { app: AppApi }) {
     try {
       const next = importJson(await file.text());
       if (confirm('匯入會覆蓋目前所有資料，確定嗎？')) {
-        app.replaceData(next);
-        setTopic(next.settings.ntfyTopic);
-        setServer(next.settings.ntfyServer);
+        // push credentials belong to the device that created them; this device subscribes on its own
+        app.replaceData({ ...next, settings: { ...defaultSettings(), pushShowTitle: next.settings.pushShowTitle } });
         app.toast('匯入完成');
       }
     } catch {
@@ -46,45 +34,51 @@ export default function SettingsView({ app }: { app: AppApi }) {
   return (
     <div className="settings">
       <section className="card">
-        <h2>📱 手機推播（ntfy）</h2>
-        <p>網頁關掉時，靠 ntfy 幫你推播提醒。ntfy 最多只能預排 3 天內的提醒，所以每次打開網頁都會自動補滿接下來 3 天（包含每天、每週的重複提醒）。</p>
-        <ol className="steps">
-          <li>在手機或電腦安裝 <a href="https://ntfy.sh" target="_blank" rel="noreferrer">ntfy</a> App（免費）。</li>
-          <li>在 App 裡按「訂閱主題」，輸入下面的主題名稱。</li>
-          <li>打開下面的開關，按「送出測試」確認收得到。</li>
-        </ol>
+        <h2>🔔 推播通知</h2>
+        <p>開啟後，就算 App 關著，提醒時間到也會跳出通知，不用另外安裝其他 App。</p>
+
+        {support === 'not-configured' && <p className="hint">推播服務還在設定中，完成後這裡就能開啟。</p>}
+
+        {support === 'install-first' && (
+          <>
+            <p>iPhone 要先把積木城市加入主畫面，才能收到通知：</p>
+            <ol className="steps">
+              <li>用 <b>Safari</b> 打開這個網站。</li>
+              <li>點下方的「分享」按鈕，選「<b>加入主畫面</b>」。</li>
+              <li>從主畫面的積木城市圖示打開，再回到這頁開啟通知。</li>
+            </ol>
+            <p className="hint">主畫面 App 和 Safari 的資料是分開的；已經有資料的話，先在下面「匯出 JSON」，再到主畫面 App 裡匯入。</p>
+          </>
+        )}
+
+        {support === 'unsupported' && <p className="hint">這個瀏覽器不支援推播通知。{isIOS() ? '' : '可以改用 Chrome、Edge 或 Safari。'}</p>}
+
+        {support === 'ok' && (
+          settings.pushEnabled ? (
+            <>
+              <p>✅ 這台裝置已開啟推播通知。</p>
+              <div className="row">
+                <button className="primary" onClick={app.testPush}>送出測試通知</button>
+                <button className="ghost danger" onClick={app.turnOffPush}>關閉推播</button>
+              </div>
+            </>
+          ) : (
+            <button className="primary" onClick={app.turnOnPush}>開啟推播通知</button>
+          )
+        )}
+
         <label className="switch">
-          <input type="checkbox" checked={settings.ntfyEnabled} onChange={(e) => app.updateSettings({ ntfyEnabled: e.target.checked })} />
-          啟用 ntfy 推播
-        </label>
-        <label>
-          主題名稱
-          <div className="row">
-            <input value={topic} onChange={(e) => setTopic(e.target.value.replace(/[^\w-]/g, ''))} maxLength={64} />
-            <button className="ghost" onClick={() => setTopic(randomTopic())}>重新產生</button>
-            <button className="ghost" onClick={() => navigator.clipboard?.writeText(topic)}>複製</button>
-          </div>
-        </label>
-        <label>
-          伺服器
-          <input value={server} onChange={(e) => setServer(e.target.value.trim())} />
-        </label>
-        <div className="row">
-          <button className="primary" disabled={!dirty || !topic} onClick={() => app.updateSettings({ ntfyTopic: topic, ntfyServer: server })}>儲存主題設定</button>
-          <button disabled={dirty || !settings.ntfyEnabled} onClick={test}>送出測試</button>
-        </div>
-        <label className="switch">
-          <input type="checkbox" checked={settings.ntfyShowTitle} onChange={(e) => app.updateSettings({ ntfyShowTitle: e.target.checked })} />
-          推播內容顯示事項標題
+          <input type="checkbox" checked={settings.pushShowTitle} onChange={(e) => app.updateSettings({ pushShowTitle: e.target.checked })} />
+          通知內容顯示事項標題
         </label>
         <p className="hint">
-          ⚠️ ntfy.sh 公開伺服器上，知道主題名稱的人都能看到推播。預設只顯示「你有一件高重要性的事項要做」，不含標題；主題名稱請保持隨機、不要分享。
+          提醒時間會存在推播伺服器上，才能在 App 關著時準時送出。預設通知只寫「你有一件高重要性的事項要做」，不會把標題傳上去；勾選上面的選項才會顯示標題。
         </p>
       </section>
 
       <section className="card">
         <h2>💾 資料</h2>
-        <p>所有資料只存在這個瀏覽器裡。換電腦或清除瀏覽器資料前，記得先匯出備份。</p>
+        <p>事項和城市只存在這台裝置裡。換手機、換瀏覽器或清除資料前，記得先匯出備份。</p>
         <div className="row">
           <button onClick={download}>匯出 JSON</button>
           <button onClick={() => fileRef.current?.click()}>匯入 JSON</button>

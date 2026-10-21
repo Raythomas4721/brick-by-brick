@@ -4,10 +4,10 @@ import { ONCE, type Importance, type Task } from './tasks/types';
 import { localDate } from './util';
 
 export interface Settings {
-  ntfyEnabled: boolean;
-  ntfyServer: string;
-  ntfyTopic: string;
-  ntfyShowTitle: boolean;
+  pushEnabled: boolean;
+  pushDeviceId: string;
+  pushSecret: string; // proves this device owns its reminders on the push backend
+  pushShowTitle: boolean;
 }
 
 export interface AppData {
@@ -17,7 +17,6 @@ export interface AppData {
   coins: number;
   activity: Activity; // completions per day
   notified: Record<string, number>; // reminder key -> time shown in the page
-  ntfy: Record<string, number>; // reminder key -> time scheduled on ntfy
   settings: Settings;
 }
 
@@ -26,12 +25,8 @@ const OLD_KEY = 'todo-monopoly:v1';
 export const START_COINS = 300;
 export const STARTER_TICKS = 3;
 
-export function randomTopic(): string {
-  const chars = 'abcdefghijkmnpqrstuvwxyz23456789';
-  const bytes = new Uint8Array(12);
-  crypto.getRandomValues(bytes);
-  const s = Array.from(bytes, (b) => chars[b % chars.length]).join('');
-  return `todo-${s.slice(0, 6)}-${s.slice(6)}`;
+export function defaultSettings(): Settings {
+  return { pushEnabled: false, pushDeviceId: '', pushSecret: '', pushShowTitle: false };
 }
 
 export function emptyData(): AppData {
@@ -43,9 +38,14 @@ export function emptyData(): AppData {
     coins: START_COINS,
     activity: {},
     notified: {},
-    ntfy: {},
-    settings: { ntfyEnabled: false, ntfyServer: 'https://ntfy.sh', ntfyTopic: randomTopic(), ntfyShowTitle: false },
+    settings: defaultSettings(),
   };
+}
+
+/** Fill in fields added after the data was saved (and drop the old ntfy settings). */
+function withDefaults(d: AppData): AppData {
+  const { pushEnabled, pushDeviceId, pushSecret, pushShowTitle } = { ...defaultSettings(), ...d.settings };
+  return { ...emptyData(), ...d, settings: { pushEnabled, pushDeviceId, pushSecret, pushShowTitle } };
 }
 
 function isAppData(v: unknown): v is AppData {
@@ -67,7 +67,6 @@ interface OldNote {
 /** Carry notes and coins over from the Monopoly version. */
 function migrateV1(old: any): AppData {
   const data = emptyData();
-  data.settings = { ...data.settings, ...(old.settings ?? {}) };
   data.coins += (old.wallet?.pendingCoins ?? 0) + 50 * ((old.wallet?.normalDice ?? 0) + (old.wallet?.goldDice ?? 0));
   data.tasks = ((old.notes ?? []) as OldNote[]).map((n) => {
     const date = n.dueAt ? localDate(n.dueAt) : null;
@@ -86,7 +85,7 @@ export function load(): AppData {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (isAppData(parsed)) return { ...emptyData(), ...parsed };
+      if (isAppData(parsed)) return withDefaults(parsed);
     }
     const old = localStorage.getItem(OLD_KEY);
     if (old) return migrateV1(JSON.parse(old));
@@ -111,5 +110,5 @@ export function exportJson(data: AppData): string {
 export function importJson(text: string): AppData {
   const parsed = JSON.parse(text);
   if (!isAppData(parsed)) throw new Error('檔案格式不正確');
-  return { ...emptyData(), ...parsed };
+  return withDefaults(parsed);
 }

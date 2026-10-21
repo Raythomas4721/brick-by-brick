@@ -3,3 +3,6 @@ dist
 *.tsbuildinfo
 vite.config.ts.timestamp-*
 .claude
+worker/.dev.vars
+worker/.wrangler
+worker/node_modules

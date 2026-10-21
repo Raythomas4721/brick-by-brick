@@ -1,0 +1,18 @@
+name = "brick-by-brick-push"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+# deliver due reminders every minute
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+VAPID_PUBLIC_KEY = "BCl9bE0Ro3B9rE3ZS7ZhxlRMb-1cAC14e2fYG4aIjpm55oucUe01dnkhnLVN9ma9ZayuxRI3xmZHOr1mpFrFUFc"
+VAPID_SUBJECT = "https://raythomas4721.github.io/brick-by-brick/"
+ALLOWED_ORIGINS = "https://raythomas4721.github.io,http://localhost:5173"
+# VAPID_PRIVATE_JWK is a secret: npx wrangler secret put VAPID_PRIVATE_JWK
+
+[[d1_databases]]
+binding = "DB"
+database_name = "brick-by-brick-push"
+database_id = "REPLACE_WITH_ID_FROM_wrangler_d1_create"
