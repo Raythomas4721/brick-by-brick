@@ -78,14 +78,14 @@ export default function SettingsView({ app }: { app: AppApi }) {
 
       <section className="card">
         <h2>💾 資料</h2>
-        <p>事項和城市只存在這台裝置裡。換手機、換瀏覽器或清除資料前，記得先匯出備份。</p>
+        <p>事項和遊戲進度只存在這台裝置裡。換手機、換瀏覽器或清除資料前，記得先匯出備份。</p>
         <div className="row">
           <button onClick={download}>匯出 JSON</button>
           <button onClick={() => fileRef.current?.click()}>匯入 JSON</button>
           <input ref={fileRef} type="file" accept="application/json" hidden onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
           <button
             className="ghost danger"
-            onClick={() => confirm('清除所有事項和城市進度？這無法復原。') && app.replaceData(emptyData())}
+            onClick={() => confirm('清除所有事項和遊戲進度？這無法復原。') && app.replaceData(emptyData())}
           >
             全部清除
           </button>
@@ -95,12 +95,13 @@ export default function SettingsView({ app }: { app: AppApi }) {
       <section className="card">
         <h2>📜 規則速查</h2>
         <ul className="rules">
-          <li>完成事項拿金幣（低 30／中 40／高 50／緊急 60）和 1 個建設點。</li>
-          <li>每天前三件完成的事是「今日三大建設」：金幣和建設點都加倍。</li>
-          <li>建設點會讓靠路的住宅區、商業區自動長出房子、商店和餐廳；用不完的會先存著（最多 30）。</li>
-          <li>幸福度 50 以上住宅可長到 2 級，70 以上可長成公寓。</li>
-          <li>每週一次自動「市政假日」：漏掉一次習慣，連續次數不會斷。</li>
-          <li>3 天沒完成事項城市會睡著，回來完成一件就天亮，並拿 100 金幣回歸獎勵。</li>
+          <li>完成一件事拿 ❤️ 體力 ×1；間隔型（例如喝水）是達到當天目標才算完成。</li>
+          <li>每天前三件完成的事是「今日三大建設」：另外送 🔨 鎚子、🔀 洗牌或 ➕5 步其中一個。</li>
+          <li>習慣連續 7／30／100 次，各送一個 💎 彩虹積木。</li>
+          <li>開一關用 1 顆體力，過關會退回；每天第一次打開送 2 顆，最多存 30 顆。</li>
+          <li>關卡無限多：每 10 關是一個大關，過關多送一個道具。</li>
+          <li>每週一次自動「請假」：漏掉一次習慣，連續次數不會斷。</li>
+          <li>3 天沒完成事項後回來，完成第一件事時送回歸禮 ❤️ ×3。</li>
         </ul>
       </section>
     </div>

@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  TOOLS, grow, hasRoadAccess, landmarkLevel, place, placeError, retireLandmark, stats, type Context, type Stats, type Tool,
-} from './city/engine';
-import { activeDays, isAway, rewardFor } from './economy/rewards';
+  BOOSTERS, DAILY_FREE_HEARTS, HEART_CAP, isAway, randomBooster, rewardFor, streakTier, type Booster,
+} from './economy/rewards';
+import { levelConfig } from './game/levels';
+import { newGame, type Game } from './game/match3';
 import { PUSH_API } from './push/config';
 import { disablePush, enablePush, reminderText, sendTestPush, syncReminders } from './push/client';
-import { load, save, type AppData, type Settings } from './storage';
+import { currentLevel, load, save, type AppData, type GameProgress, type Settings } from './storage';
 import {
-  CATEGORIES, IMPORTANCE, countOn, isInterval, isRecurring, remindersBetween, streak, type Category, type Importance, type Repeat, type Task,
+  IMPORTANCE, countOn, isInterval, isRecurring, remindersBetween, streak, type Category, type Importance, type Repeat, type Task,
 } from './tasks/types';
 import { formatRelative, localDate, newId } from './util';
 
@@ -36,11 +37,8 @@ const PUSH_WINDOW_MS = 30 * DAY;
 const PUSH_INTERVAL_WINDOW_MS = 7 * DAY;
 const PUSH_MAX = 1000;
 
-export function cityContext(tasks: Task[], activity: AppData['activity'], now: number): Context {
-  const landmarkLevels: Record<string, number> = {};
-  for (const t of tasks) if (isRecurring(t)) landmarkLevels[t.id] = landmarkLevel(streak(t, now));
-  return { activeDays: activeDays(activity, now), landmarkLevels };
-}
+const addHearts = (g: GameProgress, n: number): GameProgress => ({ ...g, hearts: Math.min(HEART_CAP, g.hearts + n) });
+const addBooster = (g: GameProgress, b: Booster, n = 1): GameProgress => ({ ...g, boosters: { ...g.boosters, [b]: g.boosters[b] + n } });
 
 /** Drop bookkeeping for reminders older than a day. */
 function prune(map: Record<string, number>, now: number): Record<string, number> {
@@ -59,7 +57,6 @@ export function useApp() {
   }, []);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const lastSynced = useRef('');
-  const lastZoneHint = useRef(0);
 
   useEffect(() => save(data), [data]);
 
@@ -70,10 +67,21 @@ export function useApp() {
   }, []);
   const dismissToast = useCallback((id: string) => setToasts((t) => t.filter((x) => x.id !== id)), []);
 
-  const now = Date.now();
-  const ctx = useMemo(() => cityContext(data.tasks, data.activity, now), [data.tasks, data.activity, Math.floor(now / 60_000)]);
-  const cityStats: Stats = useMemo(() => stats(data.city, ctx), [data.city, ctx]);
-  const away = isAway(data.activity, now);
+  const level = useMemo(() => currentLevel(data.game), [data.game]);
+
+  // ---- daily free hearts: a little play every day, even without finishing anything ----
+  useEffect(() => {
+    const give = () => {
+      const today = localDate(Date.now());
+      if (ref.current.game.freeHeartsOn === today) return;
+      update((d) => ({ ...d, game: { ...addHearts(d.game, DAILY_FREE_HEARTS), freeHeartsOn: today } }));
+      toast(`🎁 今天的免費體力 ❤️ +${DAILY_FREE_HEARTS}`, 'reward');
+    };
+    give();
+    const onShow = () => document.visibilityState === 'visible' && give();
+    document.addEventListener('visibilitychange', onShow);
+    return () => document.removeEventListener('visibilitychange', onShow);
+  }, [toast, update]);
 
   // ---- reminders: in-page alerts while the app is open ----
   const check = useCallback(() => {
@@ -86,7 +94,7 @@ export function useApp() {
         // with push on, the backend already sends a system notification
         if (!data.settings.pushEnabled && 'Notification' in window && Notification.permission === 'granted') {
           try {
-            new Notification('城市提醒', { body: msg, tag: r.key });
+            new Notification('積木城市', { body: msg, tag: r.key });
           } catch {
             // some browsers only allow notifications from a service worker
           }
@@ -148,7 +156,7 @@ export function useApp() {
     (input: TaskInput) => {
       const task: Task = { id: newId(), ...input, createdAt: Date.now(), done: [] };
       update((d) => ({ ...d, tasks: [task, ...d.tasks] }));
-      toast(isRecurring(task) ? `已新增習慣，記得到城市幫它放一座${CATEGORIES[task.category].building}` : '已新增事項');
+      toast(isRecurring(task) ? '已新增習慣，連續 7／30／100 次會拿到 💎 彩虹積木' : '已新增事項');
     },
     [toast, update],
   );
@@ -169,7 +177,6 @@ export function useApp() {
       update((d) => ({
         ...d,
         tasks: d.tasks.filter((t) => t.id !== id),
-        city: retireLandmark(d.city, id),
         notified: withoutTaskKeys(d.notified, id),
       }));
     },
@@ -186,19 +193,19 @@ export function useApp() {
       const late = !isRecurring(task) && task.date !== null && task.date < today;
       const reward = rewardFor(task, d.activity, now, late);
       const updated = { ...task, done: [...task.done, date] };
-      const levelBefore = landmarkLevel(streak(task, now));
-      const levelAfter = landmarkLevel(streak(updated, now));
-      const tasks = d.tasks.map((t) => (t.id === id ? updated : t));
+      const milestone = isRecurring(task) && streakTier(streak(updated, now)) > streakTier(streak(task, now));
       const activity = { ...d.activity, [today]: (d.activity[today] ?? 0) + 1 };
-      const growth = grow(d.city, reward.growth, cityContext(tasks, activity, now));
 
-      update((cur) => ({ ...cur, tasks, activity, city: growth.city, coins: cur.coins + reward.coins }));
+      update((cur) => {
+        let game = addHearts(cur.game, reward.hearts);
+        if (reward.booster) game = addBooster(game, reward.booster);
+        if (milestone) game = addBooster(game, 'rainbow');
+        return { ...cur, tasks: cur.tasks.map((t) => (t.id === id ? updated : t)), activity, game };
+      });
 
-      if (reward.welcomeBack) toast('🌅 市長回來了！城市醒過來了，回歸獎勵 +100', 'reward');
-      toast(`✅ 完成！+${reward.coins - (reward.welcomeBack ? 100 : 0)} 💰${reward.bonus ? `　⭐ 今日三大建設 ${reward.bonusIndex}/3（金幣加倍）` : ''}`, 'reward');
-      for (const e of growth.events) toast(e, 'reward');
-      if (levelAfter > levelBefore) toast(`🏛️ ${CATEGORIES[task.category].building}升級到 ${levelAfter} 級！`, 'reward');
-      if (growth.used === 0 && reward.growth > 0) toast('🏗️ 建設點先存著，劃一塊靠路的住宅區或商業區就會開始蓋');
+      if (reward.welcomeBack) toast('🌅 歡迎回來！回歸禮 ❤️ +3', 'reward');
+      toast(`✅ 完成！❤️ +1${reward.booster ? `　⭐ 今日三大建設 ${reward.bonusIndex}/3：${BOOSTERS[reward.booster].icon} ${BOOSTERS[reward.booster].label}` : ''}`, 'reward');
+      if (milestone) toast(`💎 「${task.title}」連續 ${streak(updated, now)} 次！獲得彩虹積木`, 'reward');
     },
     [toast, update],
   );
@@ -219,37 +226,53 @@ export function useApp() {
     [completeTask, update],
   );
 
-  // ---- city ----
-  const placeTile = useCallback(
-    (tool: Tool, x: number, y: number, taskId?: string): boolean => {
-      if (tool === 'inspect') return false;
-      const d = ref.current;
-      if (placeError(d.city, tool, x, y)) return false;
-      const cost = TOOLS[tool].cost;
-      if (d.coins < cost) {
-        toast(`金幣不夠，${TOOLS[tool].label}需要 ${cost} 💰`);
+  // ---- game ----
+  /** Start a level; costs one heart (refunded on a win). */
+  const startLevel = useCallback(
+    (n: number): boolean => {
+      const g = ref.current.game;
+      if (g.hearts < 1) {
+        toast('體力不夠了，完成一件事就能拿到 ❤️');
         return false;
       }
-      let city = place(d.city, tool, x, y, taskId);
-      let events: string[] = [];
-      if ((tool === 'R' || tool === 'C' || tool === 'road') && city.bank > 0) {
-        const g = grow(city, 0, cityContext(d.tasks, d.activity, Date.now()));
-        city = g.city;
-        events = g.events;
-      }
-      update((cur) => ({ ...cur, city, coins: cur.coins - cost }));
-      for (const e of events) toast(e, 'reward');
-      const placed = city.cells[y * city.size + x];
-      if ((tool === 'R' || tool === 'C') && placed.t === 'zone' && placed.level === 0 && Date.now() - lastZoneHint.current > 15_000) {
-        lastZoneHint.current = Date.now();
-        toast(hasRoadAccess(city, x, y) ? '🏗️ 空地劃好了！完成事項拿到建設點，這裡就會蓋起來' : '⚠️ 這塊空地沒接到道路，要緊鄰道路才會蓋房子');
-      }
+      update((d) => ({ ...d, game: { ...d.game, hearts: d.game.hearts - 1, current: newGame(levelConfig(n)) } }));
       return true;
     },
     [toast, update],
   );
 
-  const renameCity = useCallback((name: string) => update((d) => ({ ...d, city: { ...d.city, name } })), [update]);
+  /** Keep the in-progress level so a reload resumes it. */
+  const saveGame = useCallback((current: Game) => update((d) => ({ ...d, game: { ...d.game, current } })), [update]);
+
+  /** A level ended (won or lost): refund the heart and record stars on a win. */
+  const finishLevel = useCallback(
+    (result: Game) => {
+      if (result.status === 'won') {
+        const cfg = levelConfig(result.level);
+        const bonus = cfg.bonus ? randomBooster(Math.random()) : null;
+        update((d) => {
+          let game = addHearts(d.game, 1);
+          game = { ...game, current: null, stars: { ...game.stars, [result.level]: Math.max(game.stars[result.level] ?? 0, result.stars) } };
+          if (bonus) game = addBooster(game, bonus);
+          return { ...d, game };
+        });
+        if (bonus) toast(`🎉 大關獎勵：${BOOSTERS[bonus].icon} ${BOOSTERS[bonus].label}`, 'reward');
+      } else {
+        update((d) => ({ ...d, game: { ...d.game, current: null } }));
+      }
+    },
+    [toast, update],
+  );
+
+  /** Spend one booster; returns false when there are none left. */
+  const spendBooster = useCallback(
+    (b: Booster): boolean => {
+      if (ref.current.game.boosters[b] < 1) return false;
+      update((d) => ({ ...d, game: addBooster(d.game, b, -1) }));
+      return true;
+    },
+    [update],
+  );
 
   // ---- settings / data ----
   const updateSettings = useCallback((patch: Partial<Settings>) => update((d) => ({ ...d, settings: { ...d.settings, ...patch } })), [update]);
@@ -288,9 +311,9 @@ export function useApp() {
   const replaceData = useCallback((next: AppData) => update(() => next), [update]);
 
   return {
-    data, toasts, toast, dismissToast, ctx, cityStats, away,
+    data, toasts, toast, dismissToast, level, away: isAway(data.activity, Date.now()),
     addTask, updateTask, deleteTask, completeTask, bumpCount,
-    placeTile, renameCity,
+    startLevel, saveGame, finishLevel, spendBooster,
     updateSettings, replaceData, turnOnPush, turnOffPush, testPush,
   };
 }

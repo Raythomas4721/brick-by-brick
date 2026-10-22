@@ -1,23 +1,23 @@
 import { useState } from 'react';
-import CityView from './components/CityView';
+import GameView from './components/GameView';
 import SettingsView from './components/SettingsView';
 import TasksView from './components/TasksView';
 import { BONUS_PER_DAY, completionsOn } from './economy/rewards';
 import { useApp } from './useApp';
 import { localDate } from './util';
 
-type Tab = 'tasks' | 'city' | 'settings';
+type Tab = 'tasks' | 'game' | 'settings';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'tasks', label: '📝 記事本' },
-  { id: 'city', label: '🏙️ 我的城市' },
+  { id: 'game', label: '🧱 消消樂' },
   { id: 'settings', label: '⚙️ 設定' },
 ];
 
 export default function App() {
   const app = useApp();
   const [tab, setTab] = useState<Tab>('tasks');
-  const { coins, activity } = app.data;
+  const { game, activity } = app.data;
   const bonusUsed = Math.min(BONUS_PER_DAY, completionsOn(activity, localDate(Date.now())));
 
   return (
@@ -25,10 +25,9 @@ export default function App() {
       <header className="topbar">
         <h1>積木城市</h1>
         <div className="stats">
-          <span className="chip" title="今日三大建設：每天前三件事加倍">⭐ {bonusUsed}/{BONUS_PER_DAY}</span>
-          <span className="chip" title="人口">👥 {app.cityStats.population}</span>
-          <span className="chip" title="幸福度">😊 {app.cityStats.happiness}</span>
-          <span className="chip gold" title="金幣">💰 {coins}</span>
+          <span className="chip" title="今日三大建設：每天前三件事送道具">⭐ {bonusUsed}/{BONUS_PER_DAY}</span>
+          <span className="chip" title="體力：開一關用 1 顆，過關退回">❤️ {game.hearts}</span>
+          <span className="chip gold" title="目前關卡">🧱 第 {app.level} 關</span>
         </div>
       </header>
 
@@ -41,8 +40,8 @@ export default function App() {
       </nav>
 
       <main>
-        {tab === 'tasks' && <TasksView app={app} onGoCity={() => setTab('city')} />}
-        {tab === 'city' && <CityView app={app} />}
+        {tab === 'tasks' && <TasksView app={app} />}
+        {tab === 'game' && <GameView app={app} />}
         {tab === 'settings' && <SettingsView app={app} />}
       </main>
 

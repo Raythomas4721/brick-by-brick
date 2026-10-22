@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { STREAK_TIERS, landmarkLevel } from '../city/engine';
-import { BONUS_PER_DAY, completionsOn } from '../economy/rewards';
+import { BONUS_PER_DAY, STREAK_TIERS, completionsOn } from '../economy/rewards';
 import {
   CATEGORIES, IMPORTANCE, countOn, intervalSlots, isInterval, isOneOffDone, isRecurring, repeatLabel, streak, todayOccurrences,
   type Occurrence, type Task,
@@ -72,20 +71,19 @@ function OccurrenceRow({ o, now, onComplete, onBump }: { o: Occurrence; now: num
   );
 }
 
-function nextTier(s: number): string {
+function nextMilestone(s: number): string {
   const next = STREAK_TIERS.find((n) => s < n);
-  return next ? `再 ${next - s} 次升級` : '已達最高級';
+  return next ? `再 ${next - s} 次拿 💎 彩虹積木` : '已拿到所有里程碑獎勵';
 }
 
-export default function TasksView({ app, onGoCity }: { app: AppApi; onGoCity: () => void }) {
+export default function TasksView({ app }: { app: AppApi }) {
   const now = useNow(30_000);
   const [tab, setTab] = useState<Tab>('today');
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [perm, setPerm] = useState(() => ('Notification' in window ? Notification.permission : 'unsupported'));
-  const { tasks, activity, city } = app.data;
+  const { tasks, activity } = app.data;
   const today = localDate(now);
-  const placed = new Set(city.cells.flatMap((c) => (c.t === 'landmark' ? [c.taskId] : [])));
 
   const occurrences = todayOccurrences(tasks, now).sort((a, b) => {
     if (a.done !== b.done) return a.done ? 1 : -1;
@@ -115,7 +113,7 @@ export default function TasksView({ app, onGoCity }: { app: AppApi; onGoCity: ()
       <button className="ghost" onClick={() => setEditing(t.id)}>編輯</button>
       <button
         className="ghost danger"
-        onClick={() => confirm(`刪除「${t.title}」？${placed.has(t.id) ? '\n城市裡的地標會變成公園。' : ''}`) && app.deleteTask(t.id)}
+        onClick={() => confirm(`刪除「${t.title}」？`) && app.deleteTask(t.id)}
       >
         刪除
       </button>
@@ -156,7 +154,7 @@ export default function TasksView({ app, onGoCity }: { app: AppApi; onGoCity: ()
 
       {tab === 'today' && (
         <>
-          <p className="hint">⭐ 今日三大建設 {bonusUsed}/{BONUS_PER_DAY}：每天前三件完成的事，金幣和建設點加倍。</p>
+          <p className="hint">⭐ 今日三大建設 {bonusUsed}/{BONUS_PER_DAY}：每天前三件完成的事，除了 ❤️ 還會送一個道具。</p>
           {occurrences.length === 0 && <p className="empty">今天沒有排定的事項。按「＋ 新增」記一件吧 ✨</p>}
           <ul className="task-list">
             {occurrences.map((o) => (editing === o.task.id ? <li key={o.task.id}>{edit(o.task)}</li> : <OccurrenceRow key={o.task.id} o={o} now={now} onComplete={() => app.completeTask(o.task.id, o.date)} onBump={(d) => app.bumpCount(o.task.id, d)} />))}
@@ -166,12 +164,11 @@ export default function TasksView({ app, onGoCity }: { app: AppApi; onGoCity: ()
 
       {tab === 'habits' && (
         <>
-          {habits.length === 0 && <p className="empty">還沒有習慣。新增時選「每天／每週／每月」就會出現在這裡。</p>}
+          {habits.length === 0 && <p className="empty">還沒有習慣。新增時選「每天／每週／每月／間隔」就會出現在這裡。</p>}
           <ul className="task-list">
             {habits.map((t) => {
               if (editing === t.id) return <li key={t.id}>{edit(t)}</li>;
               const s = streak(t, now);
-              const lv = landmarkLevel(s);
               return (
                 <li key={t.id} className="card task" style={{ '--c': IMPORTANCE[t.importance].color } as React.CSSProperties}>
                   <div className="task-main">
@@ -181,11 +178,7 @@ export default function TasksView({ app, onGoCity }: { app: AppApi; onGoCity: ()
                       <span>🔥 連續 {s} 次</span>
                     </div>
                     <div className="meta">
-                      {placed.has(t.id) ? (
-                        <span>🏛️ {CATEGORIES[t.category].building} {lv} 級・{nextTier(s)}</span>
-                      ) : (
-                        <button className="link" onClick={onGoCity}>🏛️ 還沒放進城市，去放一座{CATEGORIES[t.category].building}</button>
-                      )}
+                      <span>{nextMilestone(s)}</span>
                     </div>
                   </div>
                   {actions(t)}

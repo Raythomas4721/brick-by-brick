@@ -1,4 +1,4 @@
-import { activeDays, isAway, rewardFor } from '../economy/rewards';
+import { activeDays, isAway, rewardFor, streakTier } from '../economy/rewards';
 import {
   allIntervalSlots, countOn, intervalSlots, occursOn, remindersBetween, repeatLabel, streak, todayOccurrences, type Task,
 } from './types';
@@ -78,17 +78,22 @@ describe('remindersBetween', () => {
 });
 
 describe('rewards', () => {
-  it('doubles coins and growth for the first three completions of the day', () => {
+  it('gives a heart, plus a booster for the first three completions of the day', () => {
     const t = task({ importance: 3 });
-    expect(rewardFor(t, { '2026-10-20': 2 }, at(2026, 10, 20), false)).toMatchObject({ coins: 100, growth: 2, bonus: true, bonusIndex: 3 });
-    expect(rewardFor(t, { '2026-10-20': 3 }, at(2026, 10, 20), false)).toMatchObject({ coins: 50, growth: 1, bonus: false });
+    expect(rewardFor(t, { '2026-10-20': 2 }, at(2026, 10, 20), false, 0)).toMatchObject({ hearts: 1, booster: 'hammer', bonus: true, bonusIndex: 3 });
+    expect(rewardFor(t, { '2026-10-20': 3 }, at(2026, 10, 20), false, 0)).toMatchObject({ hearts: 1, booster: null, bonus: false });
+    expect(rewardFor(t, {}, at(2026, 10, 20), true, 0)).toMatchObject({ hearts: 1, booster: null, late: true });
   });
 
-  it('welcomes the mayor back after three idle days', () => {
+  it('welcomes you back with extra hearts after three idle days', () => {
     const activity = { '2026-10-16': 1 };
     expect(isAway(activity, at(2026, 10, 19))).toBe(true);
     expect(isAway(activity, at(2026, 10, 18))).toBe(false);
-    expect(rewardFor(task({}), activity, at(2026, 10, 19), false)).toMatchObject({ welcomeBack: true, coins: 180 });
+    expect(rewardFor(task({}), activity, at(2026, 10, 19), false)).toMatchObject({ welcomeBack: true, hearts: 4 });
+  });
+
+  it('awards streak milestones at 7, 30 and 100', () => {
+    expect([0, 6, 7, 29, 30, 99, 100].map(streakTier)).toEqual([0, 0, 1, 1, 2, 2, 3]);
   });
 
   it('counts active days in the last week', () => {

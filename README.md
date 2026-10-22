@@ -1,6 +1,6 @@
 # 積木城市 Brick by Brick
 
-記事本 × 像素風城市養成。記下小事（看牙、每晚練英文、每週一三健身），完成就能拿金幣和建設點；劃出住宅區、商業區，房子、商店、餐廳會自己長出來，市民搬進來。
+記事本 × 消消樂。記下小事（看牙、每晚練英文、每小時喝水），完成就拿 ❤️ 體力和道具，去玩無限關卡的積木消消樂。
 
 ## 啟動
 
@@ -13,19 +13,19 @@ npm run build    # 產出 dist/，可直接放 GitHub Pages / Netlify
 
 ## 結構
 
-- `src/tasks/types.ts`：事項、重複規則（單次／每天／每週／每月）、連續次數、提醒時間
-- `src/economy/rewards.ts`：金幣、今日三大建設、回歸獎勵
-- `src/city/engine.ts`：城市規則（劃區、成長、人口、幸福度、地標）
-- `src/city/sprites.ts`、`render.ts`：像素素材拼圖與 canvas 繪製、走動的市民
+- `src/tasks/types.ts`：事項、重複規則（單次／每天／每週／每月／間隔）、連續次數、提醒時間
+- `src/economy/rewards.ts`：體力、道具、今日三大建設、習慣里程碑、回歸禮
+- `src/game/match3.ts`：消消樂引擎（連線、特殊積木、連鎖、木箱、道具）
+- `src/game/levels.ts`：用關卡編號產生無限關卡
 - `src/push/`：推播通知（訂閱、把未來 30 天的提醒同步到後端）
 - `worker/`：推播後端（Cloudflare Workers＋D1，每分鐘送出到期的提醒）
 - `public/sw.js`、`manifest.webmanifest`：可安裝成 App（加入主畫面）與接收推播
 - `src/useApp.ts`：全部狀態、localStorage、頁內提醒
-- `src/components/`：記事本、城市、設定畫面
+- `src/components/`：記事本、消消樂（關卡地圖、棋盤）、設定畫面
 
 ## 素材
 
-像素圖塊來自 [Kenney](https://kenney.nl) 的 Roguelike Modern City，CC0 授權（`public/assets/LICENSE-kenney.txt`）。
+分享預覽圖與 App 圖示使用 [Kenney](https://kenney.nl) 的 Roguelike Modern City 圖塊，CC0 授權（`public/assets/LICENSE-kenney.txt`）；遊戲積木用 CSS 繪製。
 
 ## 在 iPhone 上當 App 用
 
