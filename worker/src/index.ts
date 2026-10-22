@@ -20,7 +20,9 @@ interface Reminder {
   body: string;
 }
 
-const MAX_REMINDERS = 500;
+const MAX_REMINDERS = 1000;
+/** D1 caps bound parameters per statement, so rows are inserted 20 at a time (5 params each). */
+const ROWS_PER_INSERT = 20;
 const STALE_MS = 6 * 3600_000; // don't deliver reminders that are hours late (e.g. after an outage)
 
 function corsHeaders(req: Request, env: Env): Record<string, string> {
@@ -100,11 +102,16 @@ async function handle(req: Request, env: Env): Promise<Response> {
   if (req.method === 'PUT' && url.pathname === '/api/reminders') {
     const list = (body as any).reminders;
     if (!Array.isArray(list) || list.length > MAX_REMINDERS || !list.every(validReminder)) return json({ error: 'bad reminders' }, 400);
-    const insert = env.DB.prepare('INSERT OR REPLACE INTO reminders (device_id, key, at, title, body) VALUES (?, ?, ?, ?, ?)');
-    await env.DB.batch([
-      env.DB.prepare('DELETE FROM reminders WHERE device_id = ?').bind(device.id),
-      ...list.filter((r: Reminder) => r.at > now).map((r: Reminder) => insert.bind(device.id, r.key, r.at, r.title, r.body)),
-    ]);
+    const future = list.filter((r: Reminder) => r.at > now);
+    const inserts = [];
+    for (let i = 0; i < future.length; i += ROWS_PER_INSERT) {
+      const rows = future.slice(i, i + ROWS_PER_INSERT);
+      inserts.push(
+        env.DB.prepare(`INSERT OR REPLACE INTO reminders (device_id, key, at, title, body) VALUES ${rows.map(() => '(?, ?, ?, ?, ?)').join(', ')}`)
+          .bind(...rows.flatMap((r: Reminder) => [device.id, r.key, r.at, r.title, r.body])),
+      );
+    }
+    await env.DB.batch([env.DB.prepare('DELETE FROM reminders WHERE device_id = ?').bind(device.id), ...inserts]);
     console.log(JSON.stringify({ event: 'sync', device: device.id.slice(0, 6), count: list.length }));
     return json({ ok: true, count: list.length });
   }

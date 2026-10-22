@@ -32,7 +32,17 @@ export type Repeat =
   | { kind: 'none' }
   | { kind: 'daily' }
   | { kind: 'weekly'; days: number[] } // 0 = Sunday
-  | { kind: 'monthly'; day: number };
+  | { kind: 'monthly'; day: number }
+  /** e.g. drink water: every hour 09:00–21:00 except 12:00, done when `goal` taps are reached */
+  | { kind: 'interval'; every: number; start: string; end: string; skip: string[]; days: number[]; goal: number };
+
+export const INTERVAL_OPTIONS: { minutes: number; label: string }[] = [
+  { minutes: 30, label: '30 分鐘' },
+  { minutes: 60, label: '1 小時' },
+  { minutes: 90, label: '1.5 小時' },
+  { minutes: 120, label: '2 小時' },
+  { minutes: 180, label: '3 小時' },
+];
 
 export interface Task {
   id: string;
@@ -46,6 +56,7 @@ export interface Task {
   remindBefore: number; // minutes
   createdAt: number;
   done: string[]; // completed occurrence dates; one-off tasks use their date or "once"
+  counts?: Record<string, number>; // interval tasks: taps per date
 }
 
 export const ONCE = 'once';
@@ -54,12 +65,36 @@ export function isRecurring(t: Task): boolean {
   return t.repeat.kind !== 'none';
 }
 
+export function isInterval(t: Task): t is Task & { repeat: Extract<Repeat, { kind: 'interval' }> } {
+  return t.repeat.kind === 'interval';
+}
+
+const toMinutes = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
+const toHHMM = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+/** Every slot from start to end (inclusive), including skipped ones — for the form's toggle chips. */
+export function allIntervalSlots(r: { every: number; start: string; end: string }): string[] {
+  const out: string[] = [];
+  if (r.every <= 0) return out;
+  for (let m = toMinutes(r.start); m <= toMinutes(r.end) && out.length < 96; m += r.every) out.push(toHHMM(m));
+  return out;
+}
+
+/** Slots that actually remind. */
+export function intervalSlots(r: { every: number; start: string; end: string; skip: string[] }): string[] {
+  return allIntervalSlots(r).filter((s) => !r.skip.includes(s));
+}
+
+export function countOn(t: Task, date: string): number {
+  return t.counts?.[date] ?? 0;
+}
+
 export function occursOn(t: Task, date: string): boolean {
   const r = t.repeat;
   if (r.kind === 'none') return t.date === date;
   if (date < localDate(t.createdAt)) return false;
   if (r.kind === 'daily') return true;
-  if (r.kind === 'weekly') return r.days.includes(weekday(date));
+  if (r.kind === 'weekly' || r.kind === 'interval') return r.days.includes(weekday(date));
   return dayOfMonth(date) === Math.min(r.day, daysInMonth(date));
 }
 
@@ -76,14 +111,22 @@ export function dueAt(t: Task, date: string): number | null {
   return t.time ? dateTime(date, t.time) : null;
 }
 
+function weekdaysLabel(days: number[]): string {
+  if (days.length === 7) return '每天';
+  const sorted = [...days].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7));
+  return `每週${sorted.map((d) => WEEKDAYS[d]).join('、')}`;
+}
+
 export function repeatLabel(t: Task): string {
   const r = t.repeat;
   const time = t.time ? ` ${t.time}` : '';
-  if (r.kind === 'daily') return `每天${time}`;
-  if (r.kind === 'weekly') {
-    const days = [...r.days].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7));
-    return `每週${days.map((d) => WEEKDAYS[d]).join('、')}${time}`;
+  if (r.kind === 'interval') {
+    const every = INTERVAL_OPTIONS.find((o) => o.minutes === r.every)?.label ?? `${r.every} 分鐘`;
+    const skip = r.skip.length ? `（跳過 ${[...r.skip].sort().join('、')}）` : '';
+    return `${weekdaysLabel(r.days)} ${r.start}–${r.end} 每 ${every}${skip}`;
   }
+  if (r.kind === 'daily') return `每天${time}`;
+  if (r.kind === 'weekly') return `${weekdaysLabel(r.days)}${time}`;
   if (r.kind === 'monthly') return `每月 ${r.day} 號${time}`;
   return t.date ? `${Number(t.date.slice(5, 7))}/${Number(t.date.slice(8, 10))}${time}` : '無期限';
 }
@@ -146,16 +189,31 @@ export interface Reminder {
   due: number;
 }
 
-export function reminderKey(taskId: string, date: string): string {
-  return `${taskId}_${date.replace(/-/g, '')}`;
+export function reminderKey(taskId: string, date: string, slot?: string): string {
+  return `${taskId}_${date.replace(/-/g, '')}${slot ? slot.replace(':', '') : ''}`;
 }
 
-/** Reminders whose time falls in [from, to], skipping completed occurrences. */
-export function remindersBetween(tasks: Task[], from: number, to: number): Reminder[] {
+/**
+ * Reminders whose time falls in [from, to], skipping completed occurrences.
+ * Interval tasks remind many times a day, so they can use a shorter horizon (`intervalTo`).
+ */
+export function remindersBetween(tasks: Task[], from: number, to: number, intervalTo = to): Reminder[] {
   const out: Reminder[] = [];
   const first = localDate(from - 86_400_000);
   const last = addDays(localDate(to), 2); // remindBefore can be up to a day early
   for (const t of tasks) {
+    if (isInterval(t)) {
+      const end = Math.min(to, intervalTo);
+      const slots = intervalSlots(t.repeat);
+      for (let d = localDate(from); d <= localDate(end); d = addDays(d, 1)) {
+        if (!occursOn(t, d) || t.done.includes(d)) continue;
+        for (const slot of slots) {
+          const at = dateTime(d, slot);
+          if (at >= from && at <= end) out.push({ key: reminderKey(t.id, d, slot), task: t, date: d, at, due: at });
+        }
+      }
+      continue;
+    }
     if (!t.time) continue;
     const dates = isRecurring(t) ? [] : t.date ? [t.date] : [];
     if (isRecurring(t)) for (let d = first; d <= last; d = addDays(d, 1)) if (occursOn(t, d)) dates.push(d);

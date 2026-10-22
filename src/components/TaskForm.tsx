@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
-  CATEGORIES, IMPORTANCE, REMIND_OPTIONS, WEEKDAYS, type Category, type Importance, type Repeat, type Task,
+  CATEGORIES, IMPORTANCE, INTERVAL_OPTIONS, REMIND_OPTIONS, WEEKDAYS, allIntervalSlots,
+  type Category, type Importance, type Repeat, type Task,
 } from '../tasks/types';
 import type { TaskInput } from '../useApp';
 import { localDate, weekday } from '../util';
@@ -13,8 +14,9 @@ interface Props {
 
 type RepeatKind = Repeat['kind'];
 
-const REPEAT_LABELS: Record<RepeatKind, string> = { none: '單次', daily: '每天', weekly: '每週', monthly: '每月' };
+const REPEAT_LABELS: Record<RepeatKind, string> = { none: '單次', daily: '每天', weekly: '每週', monthly: '每月', interval: '間隔' };
 const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
+const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
 export default function TaskForm({ initial, onSubmit, onCancel }: Props) {
   const today = localDate(Date.now());
@@ -28,12 +30,27 @@ export default function TaskForm({ initial, onSubmit, onCancel }: Props) {
   const [date, setDate] = useState(initial?.date ?? '');
   const [time, setTime] = useState(initial?.time ?? '');
   const [remindBefore, setRemindBefore] = useState(initial?.remindBefore ?? 0);
+  const iv = initial?.repeat.kind === 'interval' ? initial.repeat : null;
+  const [every, setEvery] = useState(iv?.every ?? 60);
+  const [start, setStart] = useState(iv?.start ?? '09:00');
+  const [end, setEnd] = useState(iv?.end ?? '21:00');
+  const [skip, setSkip] = useState<string[]>(iv?.skip ?? []);
+  const [ivDays, setIvDays] = useState<number[]>(iv?.days ?? ALL_DAYS);
+  const [goal, setGoal] = useState<number | null>(iv?.goal ?? null); // null = one per reminder
+
+  const slots = start && end && start < end ? allIntervalSlots({ every, start, end }) : [];
+  const activeSlots = slots.filter((x) => !skip.includes(x));
+  const goalValue = Math.max(1, Math.min(goal ?? activeSlots.length, 50));
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim() || (kind === 'weekly' && days.length === 0)) return;
+    if (kind === 'interval' && (activeSlots.length === 0 || ivDays.length === 0)) return;
     const repeat: Repeat =
-      kind === 'weekly' ? { kind, days } : kind === 'monthly' ? { kind, day: monthDay } : { kind } as Repeat;
+      kind === 'weekly' ? { kind, days }
+      : kind === 'monthly' ? { kind, day: monthDay }
+      : kind === 'interval' ? { kind, every, start, end, skip: skip.filter((x) => slots.includes(x)), days: ivDays, goal: goalValue }
+      : { kind } as Repeat;
     onSubmit({
       title: title.trim(),
       memo: memo.trim(),
@@ -41,7 +58,7 @@ export default function TaskForm({ initial, onSubmit, onCancel }: Props) {
       importance,
       repeat,
       date: kind === 'none' && date ? date : null,
-      time: time || null,
+      time: kind === 'interval' ? null : time || null,
       remindBefore,
     });
     if (!initial) {
@@ -51,7 +68,8 @@ export default function TaskForm({ initial, onSubmit, onCancel }: Props) {
     }
   }
 
-  const toggleDay = (d: number) => setDays((cur) => (cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d]));
+  const toggle = <T,>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
+  const toggleDay = (d: number) => setDays((cur) => toggle(cur, d));
 
   return (
     <form className="card task-form" onSubmit={submit}>
@@ -75,6 +93,53 @@ export default function TaskForm({ initial, onSubmit, onCancel }: Props) {
         </div>
       )}
 
+      {kind === 'interval' && (
+        <div className="interval-box">
+          <div className="form-row">
+            <label>
+              每隔
+              <select value={every} onChange={(e) => setEvery(Number(e.target.value))}>
+                {INTERVAL_OPTIONS.map((o) => <option key={o.minutes} value={o.minutes}>{o.label}</option>)}
+              </select>
+            </label>
+            <label>
+              從
+              <input type="time" value={start} onChange={(e) => setStart(e.target.value)} />
+            </label>
+            <label>
+              到
+              <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} />
+            </label>
+          </div>
+          <div className="weekdays" role="group" aria-label="哪幾天">
+            {WEEK_ORDER.map((d) => (
+              <button type="button" key={d} aria-pressed={ivDays.includes(d)} className={ivDays.includes(d) ? 'on' : ''} onClick={() => setIvDays((cur) => toggle(cur, d))}>
+                {WEEKDAYS[d]}
+              </button>
+            ))}
+          </div>
+          {slots.length === 0 ? (
+            <p className="hint">「到」要晚於「從」。</p>
+          ) : (
+            <>
+              <p className="hint">點時段可以跳過（例如午餐 12:00）：</p>
+              <div className="slots" role="group" aria-label="提醒時段">
+                {slots.map((x) => (
+                  <button type="button" key={x} aria-pressed={!skip.includes(x)} className={skip.includes(x) ? 'skip' : 'on'} onClick={() => setSkip((cur) => toggle(cur, x))}>
+                    {x}
+                  </button>
+                ))}
+              </div>
+              <label className="goal">
+                每天目標
+                <input type="number" min={1} max={50} value={goalValue} onChange={(e) => setGoal(Number(e.target.value) || 1)} />
+                <span className="hint">次（共 {activeSlots.length} 個提醒）</span>
+              </label>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="form-row">
         {kind === 'none' && (
           <label>
@@ -90,6 +155,7 @@ export default function TaskForm({ initial, onSubmit, onCancel }: Props) {
             </select>
           </label>
         )}
+        {kind !== 'interval' && (<>
         <label>
           時間（填了才會提醒）
           <input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
@@ -100,6 +166,7 @@ export default function TaskForm({ initial, onSubmit, onCancel }: Props) {
             {REMIND_OPTIONS.map((o) => <option key={o.minutes} value={o.minutes}>{o.label}</option>)}
           </select>
         </label>
+        </>)}
       </div>
 
       <div className="form-row">

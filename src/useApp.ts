@@ -7,7 +7,7 @@ import { PUSH_API } from './push/config';
 import { disablePush, enablePush, reminderText, sendTestPush, syncReminders } from './push/client';
 import { load, save, type AppData, type Settings } from './storage';
 import {
-  CATEGORIES, IMPORTANCE, isRecurring, remindersBetween, streak, type Category, type Importance, type Repeat, type Task,
+  CATEGORIES, IMPORTANCE, countOn, isInterval, isRecurring, remindersBetween, streak, type Category, type Importance, type Repeat, type Task,
 } from './tasks/types';
 import { formatRelative, localDate, newId } from './util';
 
@@ -32,6 +32,9 @@ const CHECK_INTERVAL_MS = 30_000;
 const DAY = 86_400_000;
 /** How far ahead reminders are uploaded to the push backend; refreshed every time the app opens. */
 const PUSH_WINDOW_MS = 30 * DAY;
+/** Interval tasks (e.g. hourly water) remind many times a day, so only a week ahead is uploaded. */
+const PUSH_INTERVAL_WINDOW_MS = 7 * DAY;
+const PUSH_MAX = 1000;
 
 export function cityContext(tasks: Task[], activity: AppData['activity'], now: number): Context {
   const landmarkLevels: Record<string, number> = {};
@@ -108,8 +111,8 @@ export function useApp() {
     const s = d.settings;
     if (!s.pushEnabled || !s.pushDeviceId || !PUSH_API) return;
     const now = Date.now();
-    const reminders = remindersBetween(d.tasks, now + 30_000, now + PUSH_WINDOW_MS)
-      .slice(0, 400)
+    const reminders = remindersBetween(d.tasks, now + 30_000, now + PUSH_WINDOW_MS, now + PUSH_INTERVAL_WINDOW_MS)
+      .slice(0, PUSH_MAX)
       .map((r) => ({ key: r.key, at: r.at, ...reminderText(r, s.pushShowTitle) }));
     const payload = JSON.stringify(reminders);
     if (payload === lastSynced.current) return;
@@ -200,6 +203,22 @@ export function useApp() {
     [toast, update],
   );
 
+  /** Interval tasks: count one more (or one fewer) for today; reaching the goal completes the day. */
+  const bumpCount = useCallback(
+    (id: string, delta: 1 | -1) => {
+      const task = ref.current.tasks.find((t) => t.id === id);
+      if (!task || !isInterval(task)) return;
+      const today = localDate(Date.now());
+      const n = Math.max(0, countOn(task, today) + delta);
+      update((cur) => ({
+        ...cur,
+        tasks: cur.tasks.map((t) => (t.id === id ? { ...t, counts: { ...(t.counts ?? {}), [today]: n } } : t)),
+      }));
+      if (delta > 0 && n >= task.repeat.goal && !task.done.includes(today)) completeTask(id, today);
+    },
+    [completeTask, update],
+  );
+
   // ---- city ----
   const placeTile = useCallback(
     (tool: Tool, x: number, y: number, taskId?: string): boolean => {
@@ -270,7 +289,7 @@ export function useApp() {
 
   return {
     data, toasts, toast, dismissToast, ctx, cityStats, away,
-    addTask, updateTask, deleteTask, completeTask,
+    addTask, updateTask, deleteTask, completeTask, bumpCount,
     placeTile, renameCity,
     updateSettings, replaceData, turnOnPush, turnOffPush, testPush,
   };

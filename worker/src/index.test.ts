@@ -8,10 +8,14 @@ import { bytesToB64url } from './webpush';
 function fakeD1() {
   const devices = new Map<string, { id: string; secret_hash: string; subscription: string }>();
   const reminders = new Map<string, { device_id: string; key: string; at: number; title: string; body: string }>();
+  const stats = { maxParams: 0 };
   function statement(sql: string, args: any[] = []): any {
     const q = sql.replace(/\s+/g, ' ').trim();
     return {
-      bind: (...a: any[]) => statement(sql, a),
+      bind: (...a: any[]) => {
+        stats.maxParams = Math.max(stats.maxParams, a.length);
+        return statement(sql, a);
+      },
       async first() {
         const d = devices.get(args[0]);
         return d ?? null;
@@ -28,8 +32,10 @@ function fakeD1() {
           const old = devices.get(args[0]);
           devices.set(args[0], { id: args[0], secret_hash: old?.secret_hash ?? args[1], subscription: args[2] });
         } else if (q.startsWith('INSERT OR REPLACE INTO reminders')) {
-          const [device_id, key, at, title, body] = args;
-          reminders.set(`${device_id}|${key}`, { device_id, key, at, title, body });
+          for (let i = 0; i < args.length; i += 5) {
+            const [device_id, key, at, title, body] = args.slice(i, i + 5);
+            reminders.set(`${device_id}|${key}`, { device_id, key, at, title, body });
+          }
         } else if (q === 'DELETE FROM reminders WHERE device_id = ? AND key = ?') {
           reminders.delete(`${args[0]}|${args[1]}`);
         } else if (q === 'DELETE FROM reminders WHERE device_id = ?') {
@@ -44,6 +50,9 @@ function fakeD1() {
   return {
     devices,
     reminders,
+    get maxParams() {
+      return stats.maxParams;
+    },
     db: { prepare: (sql: string) => statement(sql), batch: async (s: any[]) => Promise.all(s.map((x) => x.run())) } as unknown as D1Database,
   };
 }
@@ -93,6 +102,18 @@ describe('push worker', () => {
     expect([...store.reminders.values()].map((x) => x.key)).toEqual(['c_1']); // whole list replaced
     expect((await call('PUT', '/api/reminders', { ...creds, secret: 'c'.repeat(48), reminders: [] })).status).toBe(403);
     expect((await call('PUT', '/api/reminders', { ...creds, reminders: [{ key: 'bad key!', at: 1, title: '', body: '' }] })).status).toBe(400);
+  });
+
+  it('stores large reminder lists in batches of 20 rows', async () => {
+    const { call, creds, subscription, store } = await setup();
+    await call('POST', '/api/subscribe', { ...creds, subscription });
+    const now = Date.now();
+    const reminders = Array.from({ length: 450 }, (_, i) => ({ key: `w_${i}`, at: now + 60_000 + i * 1000, title: 't', body: 'b' }));
+    expect((await call('PUT', '/api/reminders', { ...creds, reminders })).status).toBe(200);
+    expect(store.reminders.size).toBe(450);
+    expect(store.maxParams).toBeLessThanOrEqual(100);
+    const tooMany = Array.from({ length: 1001 }, (_, i) => ({ key: `w_${i}`, at: now + 60_000, title: 't', body: 'b' }));
+    expect((await call('PUT', '/api/reminders', { ...creds, reminders: tooMany })).status).toBe(400);
   });
 
   it('sends due reminders as encrypted pushes the phone can read', async () => {

@@ -1,5 +1,7 @@
 import { activeDays, isAway, rewardFor } from '../economy/rewards';
-import { occursOn, remindersBetween, streak, todayOccurrences, type Task } from './types';
+import {
+  allIntervalSlots, countOn, intervalSlots, occursOn, remindersBetween, repeatLabel, streak, todayOccurrences, type Task,
+} from './types';
 
 const at = (y: number, m: number, d: number, h = 9) => new Date(y, m - 1, d, h).getTime();
 
@@ -91,5 +93,52 @@ describe('rewards', () => {
 
   it('counts active days in the last week', () => {
     expect(activeDays({ '2026-10-20': 1, '2026-10-18': 2, '2026-10-10': 5 }, at(2026, 10, 20))).toBe(2);
+  });
+});
+
+describe('interval tasks', () => {
+  const water = (p: Partial<Task> = {}) =>
+    task({
+      id: 'water',
+      time: null,
+      repeat: { kind: 'interval', every: 60, start: '09:00', end: '21:00', skip: ['12:00'], days: [0, 1, 2, 3, 4, 5, 6], goal: 8 },
+      ...p,
+    });
+
+  it('lists slots from start to end and leaves out skipped ones', () => {
+    const r = { every: 60, start: '09:00', end: '13:00', skip: ['12:00'] };
+    expect(allIntervalSlots(r)).toEqual(['09:00', '10:00', '11:00', '12:00', '13:00']);
+    expect(intervalSlots(r)).toEqual(['09:00', '10:00', '11:00', '13:00']);
+    expect(allIntervalSlots({ every: 90, start: '09:00', end: '12:00' })).toEqual(['09:00', '10:30', '12:00']);
+  });
+
+  it('reminds once per slot with unique keys and skips 12:00', () => {
+    const r = remindersBetween([water()], at(2026, 10, 20, 0), at(2026, 10, 20, 23));
+    expect(r).toHaveLength(12);
+    expect(new Set(r.map((x) => x.key)).size).toBe(12);
+    expect(r.map((x) => new Date(x.at).getHours())).not.toContain(12);
+    expect(r[0].key).toBe('water_202610200900');
+  });
+
+  it('stops reminding once the day’s goal is reached', () => {
+    const r = remindersBetween([water({ done: ['2026-10-20'] })], at(2026, 10, 20, 0), at(2026, 10, 21, 23));
+    expect(r.every((x) => x.date === '2026-10-21')).toBe(true);
+  });
+
+  it('respects the shorter interval horizon and chosen weekdays', () => {
+    const weekdaysOnly = water({ repeat: { kind: 'interval', every: 120, start: '09:00', end: '17:00', skip: [], days: [1, 2, 3, 4, 5], goal: 5 } });
+    // Sat 24 + Sun 25 are excluded; horizon cut at the 22nd
+    const r = remindersBetween([weekdaysOnly], at(2026, 10, 20, 0), at(2026, 10, 26, 23), at(2026, 10, 22, 23));
+    expect([...new Set(r.map((x) => x.date))]).toEqual(['2026-10-20', '2026-10-21', '2026-10-22']);
+    expect(occursOn(weekdaysOnly, '2026-10-24')).toBe(false);
+  });
+
+  it('builds streaks from days the goal was reached', () => {
+    expect(streak(water({ done: ['2026-10-18', '2026-10-19'], counts: { '2026-10-20': 3 } }), at(2026, 10, 20))).toBe(2);
+    expect(countOn(water({ counts: { '2026-10-20': 3 } }), '2026-10-20')).toBe(3);
+  });
+
+  it('describes the schedule', () => {
+    expect(repeatLabel(water())).toBe('每天 09:00–21:00 每 1 小時（跳過 12:00）');
   });
 });

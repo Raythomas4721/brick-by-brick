@@ -83,8 +83,9 @@ export function sendTestPush(creds: PushCredentials): Promise<void> {
 /** Notification text. Titles stay off the server unless the user opts in. */
 export function reminderText(r: Reminder, showTitle: boolean): { title: string; body: string } {
   const imp = IMPORTANCE[r.task.importance].label;
-  const when = `${formatDate(r.date)} ${r.task.time}`;
-  const lead = r.task.remindBefore > 0 ? `${when} 要做` : `現在（${when}）`;
+  const due = new Date(r.due);
+  const when = `${formatDate(r.date)} ${String(due.getHours()).padStart(2, '0')}:${String(due.getMinutes()).padStart(2, '0')}`;
+  const lead = r.at < r.due ? `${when} 要做` : `現在（${when}）`;
   return showTitle
     ? { title: r.task.title.slice(0, 100), body: `${lead}・${imp}` }
     : { title: '積木城市', body: `市長，你有一件${imp}重要性的事項${lead}` };

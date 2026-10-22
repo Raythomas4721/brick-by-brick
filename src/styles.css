@@ -110,6 +110,15 @@ a { color: var(--accent); }
 .segmented.imp button { border-color: var(--c); color: var(--c); }
 .segmented.imp button.on { background: var(--c); color: #fff; }
 .weekdays button { width: 38px; padding: 6px 0; }
+.interval-box { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 10px; background: var(--surface-2); }
+.slots { display: flex; flex-wrap: wrap; gap: 4px; }
+.slots button { font-variant-numeric: tabular-nums; padding: 4px 8px; }
+.slots button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.slots button.skip { text-decoration: line-through; color: var(--muted); }
+.goal { flex-direction: row !important; align-items: center; gap: 6px; }
+.goal input { width: 72px; }
+.counter { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.counter .count { min-width: 56px; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
 button.link { border: none; background: none; padding: 0; color: var(--accent); text-decoration: underline; }
 .section-title { font-size: 15px; margin: 16px 0 8px; }
 

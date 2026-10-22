@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { STREAK_TIERS, landmarkLevel } from '../city/engine';
 import { BONUS_PER_DAY, completionsOn } from '../economy/rewards';
 import {
-  CATEGORIES, IMPORTANCE, isOneOffDone, isRecurring, repeatLabel, streak, todayOccurrences, type Occurrence, type Task,
+  CATEGORIES, IMPORTANCE, countOn, intervalSlots, isInterval, isOneOffDone, isRecurring, repeatLabel, streak, todayOccurrences,
+  type Occurrence, type Task,
 } from '../tasks/types';
 import type { AppApi } from '../useApp';
 import { addDays, dateTime, formatDate, formatRelative, localDate } from '../util';
@@ -36,7 +37,14 @@ function TaskTitle({ task }: { task: Task }) {
   );
 }
 
-function OccurrenceRow({ o, now, onComplete }: { o: Occurrence; now: number; onComplete: () => void }) {
+/** The next slot today for an interval task, e.g. "14:00". */
+function nextSlot(t: Task, now: number): string | null {
+  if (!isInterval(t)) return null;
+  const hhmm = new Date(now).toTimeString().slice(0, 5);
+  return intervalSlots(t.repeat).find((x) => x > hhmm) ?? null;
+}
+
+function OccurrenceRow({ o, now, onComplete, onBump }: { o: Occurrence; now: number; onComplete: () => void; onBump: (d: 1 | -1) => void }) {
   const t = o.task;
   const due = t.time && o.date !== 'once' ? dateTime(o.date, t.time) : null;
   const s = isRecurring(t) ? streak(t, now) : 0;
@@ -49,10 +57,17 @@ function OccurrenceRow({ o, now, onComplete }: { o: Occurrence; now: number; onC
           {isRecurring(t) && <span>{repeatLabel(t)}</span>}
           {!isRecurring(t) && o.overdue && <span className="overdue">原定 {formatDate(t.date!)}，已逾期</span>}
           {due && !o.done && <span className={due < now ? 'overdue' : ''}>⏰ {t.time}（{formatRelative(due - now)}）</span>}
+          {isInterval(t) && !o.done && nextSlot(t, now) && <span>⏰ 下次 {nextSlot(t, now)}</span>}
           {s > 0 && <span title="連續次數，每週可自動補一次">🔥 {s}</span>}
         </div>
       </div>
-      {o.done ? <span className="done-mark">✓ 完成</span> : <button className="primary" onClick={onComplete}>完成</button>}
+      {isInterval(t) ? (
+        <div className="counter" aria-label="今天的次數">
+          <button className="ghost" onClick={() => onBump(-1)} disabled={countOn(t, o.date) === 0} aria-label="減一">－</button>
+          <span className={o.done ? 'count done-mark' : 'count'}>{countOn(t, o.date)}／{t.repeat.goal}{o.done ? ' ✓' : ''}</span>
+          <button className="primary" onClick={() => onBump(1)} aria-label="加一">＋1</button>
+        </div>
+      ) : o.done ? <span className="done-mark">✓ 完成</span> : <button className="primary" onClick={onComplete}>完成</button>}
     </li>
   );
 }
@@ -144,7 +159,7 @@ export default function TasksView({ app, onGoCity }: { app: AppApi; onGoCity: ()
           <p className="hint">⭐ 今日三大建設 {bonusUsed}/{BONUS_PER_DAY}：每天前三件完成的事，金幣和建設點加倍。</p>
           {occurrences.length === 0 && <p className="empty">今天沒有排定的事項。按「＋ 新增」記一件吧 ✨</p>}
           <ul className="task-list">
-            {occurrences.map((o) => (editing === o.task.id ? <li key={o.task.id}>{edit(o.task)}</li> : <OccurrenceRow key={o.task.id} o={o} now={now} onComplete={() => app.completeTask(o.task.id, o.date)} />))}
+            {occurrences.map((o) => (editing === o.task.id ? <li key={o.task.id}>{edit(o.task)}</li> : <OccurrenceRow key={o.task.id} o={o} now={now} onComplete={() => app.completeTask(o.task.id, o.date)} onBump={(d) => app.bumpCount(o.task.id, d)} />))}
           </ul>
         </>
       )}
